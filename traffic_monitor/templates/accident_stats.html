@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}事故统计{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h4 class="mb-3"><i class="bi bi-bar-chart"></i> 事故统计分析</h4>
+    
+    <div class="row g-3">
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-danger">
+                <div class="card-body text-center">
+                    <h1 class="text-danger">{{ stats.total }}</h1>
+                    <p class="mb-0">事故总数</p>
+                </div>
+            </div>
+        </div>
+        {% for sev, count in stats.by_severity.items() %}
+        <div class="col-lg-2 col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-body text-center">
+                    <h3>{{ count }}</h3>
+                    <small>{{ sev|severity_label }}</small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- MongoDB vs Neo4j 严重程度对比 -->
+    {% if stats.neo4j_severity %}
+    <div class="alert alert-info mt-3 mb-0">
+        <small><i class="bi bi-info-circle"></i> Neo4j 侧严重程度分布：
+        {% for sev, count in stats.neo4j_severity.items() %}
+            <span class="badge bg-secondary me-1">{{ sev|severity_label }}: {{ count }}</span>
+        {% endfor %}
+        （与上方 MongoDB 卡片交叉校验）
+        </small>
+    </div>
+    {% endif %}
+
+    <!-- 归因分析 -->
+    <div class="card shadow-sm mt-4">
+        <div class="card-header bg-dark text-white">
+            <h6 class="mb-0"><i class="bi bi-diagram-3"></i> Neo4j 事故归因：高频因素组合</h6>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>排名</th><th>天气</th><th>路况</th><th>车辆类型</th><th>严重程度</th><th>事故次数</th></tr>
+                </thead>
+                <tbody>
+                    {% for cause in stats.cause_analysis[:10] %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ cause.weather|weather_label }}</td>
+                        <td>{{ cause.road_condition|road_condition_label }}</td>
+                        <td>{{ cause.vehicle_type|vehicle_type_label }}</td>
+                        <td><span class="badge bg-{{ 'danger' if cause.severity == 'fatal' else 'warning' if cause.severity == 'severe' else 'info' if cause.severity == 'moderate' else 'secondary' }}">{{ cause.severity|severity_label }}</span></td>
+                        <td><span class="badge bg-danger">{{ cause.count }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

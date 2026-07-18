@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}摄像头实时检测{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3">
+    <h4 class="mb-3"><i class="bi bi-webcam"></i> 摄像头实时检测</h4>
+
+    <div class="row">
+        <div class="col-lg-8 mb-3">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white d-flex justify-content-between">
+                    <h6 class="mb-0"><i class="bi bi-camera-video"></i> 视频画面</h6>
+                    <span id="camStatus" class="badge bg-secondary">未连接</span>
+                </div>
+                <div class="card-body p-0 bg-black text-center">
+                    <video id="webcamVideo" autoplay playsinline muted
+                           style="width:100%;max-height:480px;background:#000;"></video>
+                    <canvas id="webcamCanvas" style="display:none;"></canvas>
+                </div>
+                <div class="card-footer bg-white">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small">视频源类型</label>
+                            <select class="form-select form-select-sm" id="sourceType" onchange="switchSourceType()">
+                                <option value="webcam">本地/USB 摄像头</option>
+                                <option value="m3u8">M3U8/HLS 直播流</option>
+                                <option value="rtsp">RTSP/RTMP（服务端）</option>
+                                <option value="url">自定义 URL</option>
+                            </select>
+                        </div>
+                        <div class="col-md-9">
+                            <label class="form-label small">流地址</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" id="streamUrl" placeholder="摄像头编号或流地址">
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePresets()">📋 预设源</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 d-flex gap-2">
+                        <button class="btn btn-success btn-sm" onclick="startStream()">▶ 连接</button>
+                        <button class="btn btn-warning btn-sm" onclick="captureAndDetect()">📷 捕获检测</button>
+                        <button class="btn btn-danger btn-sm" onclick="stopStream()">■ 断开</button>
+                        <span class="ms-auto small text-muted align-self-center" id="detectTime"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 预设源面板 -->
+            <div class="card shadow-sm mt-3" id="presetPanel" style="display:none;">
+                <div class="card-header bg-info text-white"><h6 class="mb-0">📋 视频源参考</h6></div>
+                <div class="card-body p-2 small">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <strong>🚗 河南高速实时监控</strong>
+                            <ul class="mb-1">
+                                <li><a href="#" onclick="loadHngsCamera('1324629868805103618','河南高速-示例摄像头')">📡 河南高速-示例摄像头</a></li>
+                                <li class="text-muted small mt-1">
+                                    通过 <code>/api/hngs-camera-url</code> 获取实时 M3U8 流<br>
+                                    <input type="text" class="form-control form-control-sm mt-1" id="hngsCameraId" 
+                                           placeholder="输入摄像头ID">
+                                    <button class="btn btn-info btn-sm mt-1" onclick="loadHngsCamera(document.getElementById('hngsCameraId').value,'河南高速')">🔗 加载指定摄像头</button>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <strong>🧪 测试源</strong>
+                            <ul class="mb-1">
+                                <li><a href="#" onclick="setStream('webcam','0')">📷 本地摄像头</a></li>
+                                <li><a href="#" onclick="setStream('m3u8','https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8')">📡 公开M3U8测试流</a></li>
+                                <li><a href="#" onclick="setStream('url','https://www.w3schools.com/html/mov_bbb.mp4')">🎬 测试MP4视频</a></li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <strong>🔧 获取更多视频源</strong>
+                            <ol class="mb-1">
+                                <li>用 <b>OBS</b> 录屏 → 推流 → M3U8</li>
+                                <li>高德/百度地图 API</li>
+                                <li><code>ffmpeg -i 视频.mp4 -c copy -hls_time 2 out.m3u8</code></li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧面板 -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-primary text-white"><h6 class="mb-0">YOLO 检测结果</h6></div>
+                <div class="card-body" id="detectResult">
+                    <p class="text-muted text-center py-4">点击「捕获检测」开始</p>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><h6 class="mb-0">⚙ 设置</h6></div>
+                <div class="card-body small">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="autoDetect">
+                        <label class="form-check-label">自动定时检测</label>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small mb-0">间隔(秒)</label>
+                            <input type="number" class="form-control form-control-sm" id="detectInterval" value="3" min="1" max="60">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-0">路段</label>
+                            <select class="form-select form-select-sm" id="roadSelect">
+                                {% for i in range(1, 13) %}
+                                <option value="R{{ '%03d'|format(i) }}">R{{ '%03d'|format(i) }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">监测点</label>
+                        <select class="form-select form-select-sm" id="camSelect">
+                            {% for cam in cameras %}
+                            <option value="{{ cam.camera_id }}">{{ cam.camera_id }}</option>
+                            {% endfor %}
+                            <option value="CAM_WEBCAM" selected>CAM_WEBCAM</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm">
+                <div class="card-header small"><strong>📋 检测历史</strong></div>
+                <div class="card-body p-0" style="max-height:200px;overflow-y:auto;" id="detectHistory">
+                    <p class="text-muted text-center py-3 small">暂无</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentStream = null, hls = null, autoTimer = null, detectHistory = [], detectCount = 0;
+
+const labels = {normal:'畅通', light:'轻度', moderate:'中度', heavy:'严重'};
+const colors = {normal:'success', light:'info', moderate:'warning', heavy:'danger'};
+
+function switchSourceType() {
+    const t = document.getElementById('sourceType').value;
+    const presets = {webcam:'0', m3u8:'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+                     rtsp:'rtsp://admin:password@192.168.1.108:554/stream',
+                     url:'https://www.w3schools.com/html/mov_bbb.mp4'};
+    document.getElementById('streamUrl').value = presets[t] || '';
+}
+
+function setStream(type, url) {
+    document.getElementById('sourceType').value = type;
+    document.getElementById('streamUrl').value = url;
+    document.getElementById('presetPanel').style.display = 'none';
+}
+
+function togglePresets() {
+    const p = document.getElementById('presetPanel');
+    p.style.display = p.style.display === 'none' ? '' : 'none';
+}
+
+async function loadHngsCamera(cameraNum, label) {
+    document.getElementById('presetPanel').style.display = 'none';
+    const status = document.getElementById('camStatus');
+    status.textContent = '⏳ 获取流...';
+    status.className = 'badge bg-info';
+    
+    try {
+        const resp = await fetch(`/detection/api/hngs-camera-url?cameraNum=${cameraNum}`);
+        const data = await resp.json();
+        if (data.success && data.m3u8_url) {
+            document.getElementById('sourceType').value = 'm3u8';
+            document.getElementById('streamUrl').value = data.m3u8_url;
+            status.textContent = `河南高速-${cameraNum.slice(-6)}`;
+            status.className = 'badge bg-success';
+            startStream();
+        } else {
+            status.textContent = '获取失败';
+            status.className = 'badge bg-danger';
+            alert('获取摄像头流失败: ' + (data.error || '未知错误'));
+        }
+    } catch(e) {
+        status.textContent = '请求失败';
+        status.className = 'badge bg-danger';
+    }
+}
+
+async function startStream() {
+    const type = document.getElementById('sourceType').value;
+    const url = document.getElementById('streamUrl').value;
+    const video = document.getElementById('webcamVideo');
+    const status = document.getElementById('camStatus');
+    stopStream();
+
+    try {
+        if (type === 'webcam') {
+            currentStream = await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720}});
+            video.srcObject = currentStream;
+            status.textContent = '● 在线'; status.className = 'badge bg-success';
+        } else if (type === 'm3u8' && Hls.isSupported()) {
+            hls = new Hls(); hls.loadSource(url); hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => { status.textContent='● M3U8在线'; status.className='badge bg-success'; });
+            hls.on(Hls.Events.ERROR, () => { status.textContent='加载失败'; status.className='badge bg-danger'; });
+        } else if (type === 'url') {
+            video.src = url; video.crossOrigin = 'anonymous';
+            status.textContent = '● 播放中'; status.className = 'badge bg-success';
+        } else {
+            status.textContent = '需服务端转发'; status.className = 'badge bg-warning';
+            alert('RTSP/RTMP 需用 ffmpeg 转发：\nffmpeg -i ' + url + ' -c copy -f flv rtmp://localhost/live/stream');
+        }
+    } catch(e) { status.textContent='失败'; status.className='badge bg-danger'; console.error(e); }
+}
+
+function stopStream() {
+    if (hls) { hls.destroy(); hls = null; }
+    if (currentStream) { currentStream.getTracks().forEach(t=>t.stop()); currentStream = null; }
+    const v = document.getElementById('webcamVideo');
+    v.src = ''; v.srcObject = null;
+    document.getElementById('camStatus').textContent = '未连接';
+    document.getElementById('camStatus').className = 'badge bg-secondary';
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+}
+
+async function captureAndDetect() {
+    const video = document.getElementById('webcamVideo');
+    const canvas = document.getElementById('webcamCanvas');
+    const resultDiv = document.getElementById('detectResult');
+    detectCount++;
+    resultDiv.innerHTML = '<div class="spinner-border spinner-border-sm"></div> 检测中...';
+
+    try {
+        if (video.videoWidth > 0) {
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            canvas.toBlob(async blob => {
+                const fd = new FormData();
+                fd.append('image', blob, 'cap_'+detectCount+'.jpg');
+                fd.append('camera_id', document.getElementById('camSelect').value);
+                fd.append('road_id', document.getElementById('roadSelect').value);
+                try {
+                    const r = await fetch('/detection/api/detect', {method:'POST', body:fd});
+                    showResult(await r.json(), resultDiv);
+                } catch(e) { resultDiv.innerHTML = '<div class="alert alert-danger small">请求失败</div>'; }
+            }, 'image/jpeg', 0.85);
+        } else {
+            resultDiv.innerHTML = '<div class="alert alert-warning small">⚠️ 请先连接视频源</div>';
+        }
+    } catch(e) { resultDiv.innerHTML = '<div class="alert alert-danger small">'+e.message+'</div>'; }
+}
+
+function showResult(data, div) {
+    document.getElementById('detectTime').textContent = new Date().toLocaleTimeString('zh-CN');
+    if (!data.success && data.error) { div.innerHTML='<div class="alert alert-warning small">'+data.error+'</div>'; return; }
+    const lv = data.congestion_level || 'normal';
+    let h = '';
+    if (data.vehicle_counts) Object.entries(data.vehicle_counts).forEach(([k,v])=>h+=`<span class="badge bg-secondary me-1">${k}:${v}</span>`);
+    div.innerHTML = `<div class="alert alert-${colors[lv]} mb-0 small p-2"><strong>🚗 ${data.total_vehicles||0}辆</strong> <span class="badge bg-${colors[lv]}">${labels[lv]}</span><div class="mt-1">${h}</div></div>`;
+
+    detectHistory.unshift({time:new Date().toLocaleTimeString('zh-CN'), total:data.total_vehicles||0, level:lv});
+    if (detectHistory.length>20) detectHistory.pop();
+    document.getElementById('detectHistory').innerHTML = detectHistory.map(d=>`<div class="border-bottom p-1 small d-flex justify-content-between"><span>🚗${d.total}辆</span><span class="badge bg-${colors[d.level]}">${labels[d.level]}</span><span class="text-muted">${d.time}</span></div>`).join('');
+}
+
+document.getElementById('autoDetect').addEventListener('change', function(){
+    if(this.checked) autoTimer = setInterval(captureAndDetect, parseInt(document.getElementById('detectInterval').value)*1000);
+    else { clearInterval(autoTimer); autoTimer = null; }
+});
+document.getElementById('detectInterval').addEventListener('change', function(){
+    if(document.getElementById('autoDetect').checked){clearInterval(autoTimer);autoTimer=setInterval(captureAndDetect,parseInt(this.value)*1000);}
+});
+switchSourceType();
+</script>
+{% endblock %}

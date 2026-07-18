@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}车辆检测{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <!-- 上传检测区 -->
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> 上传图片检测（YOLOv8）</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('detection.upload_and_detect') }}" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">选择图片</label>
+                            <input type="file" class="form-control" name="image" accept="image/*" required>
+                            <small class="text-muted">支持 jpg/png/gif/webp</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">监测点</label>
+                                <select class="form-select" name="camera_id">
+                                    {% for cam in cameras %}
+                                    <option value="{{ cam.camera_id }}">{{ cam.camera_id }} - {{ cam.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">路段</label>
+                                <select class="form-select" name="road_id">
+                                    {% for i in range(1, 13) %}
+                                    <option value="R{{ '%03d'|format(i) }}">R{{ '%03d'|format(i) }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-search"></i> 开始检测
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 模拟数据区 -->
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-shuffle"></i> 模拟交通数据（无需图片）</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">
+                        <i class="bi bi-info-circle"></i> 
+                        不依赖 YOLO 模型，直接生成随机车流量数据，<br>
+                        用于演示 <strong>Redis 实时缓存 + 预警消息队列 + Neo4j 路网更新</strong> 的完整链路。
+                    </p>
+                    <form id="simForm">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">监测点</label>
+                                <select class="form-select" name="camera_id" id="simCamera">
+                                    {% for cam in cameras %}
+                                    <option value="{{ cam.camera_id }}">{{ cam.camera_id }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">路段</label>
+                                <select class="form-select" name="road_id" id="simRoad">
+                                    {% for i in range(1, 13) %}
+                                    <option value="R{{ '%03d'|format(i) }}">R{{ '%03d'|format(i) }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-warning w-100" onclick="simulate()">
+                            <i class="bi bi-lightning"></i> 生成模拟数据
+                        </button>
+                    </form>
+                    <div id="simResult" class="mt-3" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 视频上传区 -->
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-film"></i> 上传视频检测</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('detection.upload_video_and_detect') }}" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">选择视频文件</label>
+                            <input type="file" class="form-control" name="video" accept="video/*" required>
+                            <small class="text-muted">支持 mp4/avi/mov，系统将对每隔N帧采样检测</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">监测点</label>
+                                <select class="form-select" name="camera_id">
+                                    {% for cam in cameras %}
+                                    <option value="{{ cam.camera_id }}">{{ cam.camera_id }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">路段</label>
+                                <select class="form-select" name="road_id">
+                                    {% for i in range(1, 13) %}
+                                    <option value="R{{ '%03d'|format(i) }}">R{{ '%03d'|format(i) }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">采样间隔(帧)</label>
+                                <input type="number" class="form-control" name="sample_interval" value="30" min="5" max="300">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-play-fill"></i> 上传并检测
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 摄像头实时检测 -->
+    <div class="text-center mt-3">
+        <a href="{{ url_for('detection.webcam_page') }}" class="btn btn-outline-info me-2">
+            <i class="bi bi-webcam"></i> 摄像头实时检测
+        </a>
+                    <div id="simResult" class="mt-3" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 检测历史链接 -->
+    <div class="text-center mt-3">
+        <a href="{{ url_for('detection.detection_history') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-clock-history"></i> 查看检测历史
+        </a>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-info ms-2">
+            <i class="bi bi-display"></i> 实时监控大屏
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function simulate() {
+    const camera = document.getElementById('simCamera').value;
+    const road = document.getElementById('simRoad').value;
+    const resultDiv = document.getElementById('simResult');
+    
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div class="text-center text-muted">⏳ 生成模拟数据中...</div>';
+    
+    try {
+        const resp = await fetch('/detection/simulate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `camera_id=${camera}&road_id=${road}`
+        });
+        const data = await resp.json();
+        
+        if (data.success) {
+            const level = data.congestion_level;
+            const colors = {normal:'success', light:'info', moderate:'warning', heavy:'danger'};
+            const labels = {normal:'畅通', light:'轻度拥堵', moderate:'中度拥堵', heavy:'严重拥堵'};
+            
+            resultDiv.innerHTML = `
+                <div class="alert alert-${colors[level]||'secondary'}">
+                    <h5>✅ 模拟数据生成成功</h5>
+                    <p class="mb-1"><strong>车流量:</strong> ${data.total_vehicles} 辆</p>
+                    <p class="mb-1"><strong>拥堵等级:</strong> ${labels[level]||level}</p>
+                    <p class="mb-0"><small>数据已同步到 Redis 缓存 + MongoDB + Neo4j</small></p>
+                </div>`;
+            
+            // 3秒后刷新页面以显示新数据
+            setTimeout(() => location.reload(), 2000);
+        }
+    } catch (e) {
+        resultDiv.innerHTML = `<div class="alert alert-danger">❌ 模拟失败: ${e.message}</div>`;
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}检测结果{% endblock %}
+
+{% block content %}
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">首页</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('detection.detection_page') }}">车辆检测</a></li>
+            <li class="breadcrumb-item active">检测结果</li>
+        </ol>
+    </nav>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-check-circle"></i> YOLO 检测结果</h5>
+                </div>
+                <div class="card-body">
+                    <!-- 概览 -->
+                    <div class="row text-center mb-4">
+                        <div class="col-3">
+                            <div class="border rounded p-2">
+                                <h3 class="text-primary mb-0">{{ detection.total_vehicles }}</h3>
+                                <small>检测车辆</small>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="border rounded p-2">
+                                <h3 class="text-info mb-0">{{ detection.detections|length }}</h3>
+                                <small>检测框</small>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="border rounded p-2">
+                                <h3 class="text-{{ detection.congestion_level|congestion_color }} mb-0">
+                                    {{ detection.congestion_level|congestion_label }}
+                                </h3>
+                                <small>拥堵等级</small>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="border rounded p-2">
+                                <h3 class="text-{{ 'danger' if detection.risk_level == 'high' else 'warning' if detection.risk_level == 'medium' else 'success' }} mb-0">
+                                    {{ detection.risk_level|risk_level_label }}
+                                </h3>
+                                <small>风险等级</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 车型统计 -->
+                    <h6>车型分布</h6>
+                    <div class="row mb-3">
+                        {% for vtype, count in detection.vehicle_counts.items() %}
+                        <div class="col-3 text-center">
+                            <div class="bg-light rounded p-2">
+                                <strong class="fs-5">{{ count }}</strong><br>
+                                <small class="text-muted">{{ vtype|vehicle_type_label }}</small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- 检测详情 -->
+                    <h6>检测详情（前10条）</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead class="table-light">
+                                <tr><th>#</th><th>类型</th><th>置信度</th><th>位置 (x1,y1,x2,y2)</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for det in detection.detections[:10] %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ det.class_name_cn }}</td>
+                                    <td>{{ "%.1f%%"|format(det.confidence * 100) }}</td>
+                                    <td><small>{{ det.bbox|join(', ') }}</small></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><h6 class="mb-0">检测元信息</h6></div>
+                <div class="card-body">
+                    <p><strong>监测点:</strong> {{ detection.camera_id }}</p>
+                    <p><strong>路段:</strong> {{ detection.road_id or '未指定' }}</p>
+                    <p><strong>时间:</strong> {{ detection.timestamp.strftime('%Y-%m-%d %H:%M:%S') if detection.timestamp }}</p>
+                    <p><strong>记录ID:</strong> <small class="text-muted">{{ detection._id }}</small></p>
+                </div>
+            </div>
+            <div class="alert alert-info small">
+                <i class="bi bi-info-circle"></i>
+                此检测结果已同时存入 MongoDB 和 Redis 缓存。<br>
+                拥堵数据已同步到 Neo4j 路网图中。
+            </div>
+            <a href="{{ url_for('detection.detection_page') }}" class="btn btn-primary w-100">
+                <i class="bi bi-arrow-repeat"></i> 继续检测
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

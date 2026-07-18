@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}视频检测结果{% endblock %}
+
+{% block content %}
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">首页</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('detection.detection_page') }}">车辆检测</a></li>
+            <li class="breadcrumb-item active">视频检测结果</li>
+        </ol>
+    </nav>
+
+    <h4 class="mb-3"><i class="bi bi-film"></i> 视频检测结果</h4>
+
+    <!-- 视频概览 -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-primary text-center">
+                <div class="card-body">
+                    <h3>{{ result.total_frames }}</h3>
+                    <small>总帧数</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-info text-center">
+                <div class="card-body">
+                    <h3>{{ result.fps }} fps</h3>
+                    <small>帧率</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning text-center">
+                <div class="card-body">
+                    <h3>{{ result.peak_vehicles }}</h3>
+                    <small>峰值车流量（帧{{ result.peak_frame }}）</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-success text-center">
+                <div class="card-body">
+                    <h3>{{ result.avg_vehicles }}</h3>
+                    <small>平均车流量</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 采样帧详情 -->
+    <h5>采样帧检测明细（共 {{ result.sampled_frames|length }} 帧）</h5>
+    <div class="table-responsive">
+        <table class="table table-hover table-sm">
+            <thead class="table-dark">
+                <tr>
+                    <th>帧号</th><th>车流量</th><th>拥堵等级</th>
+                    <th>风险</th><th>检测框数</th><th>车型分布</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for frame in result.sampled_frames %}
+                <tr>
+                    <td>{{ frame.frame }}</td>
+                    <td><strong>{{ frame.total_vehicles }}</strong></td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if frame.congestion_level == 'normal' else 'info' if frame.congestion_level == 'light' else 'warning' if frame.congestion_level == 'moderate' else 'danger' }}">
+                            {{ {'normal':'畅通','light':'轻度','moderate':'中度','heavy':'严重'}.get(frame.congestion_level, frame.congestion_level) }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge bg-{{ 'danger' if frame.risk_level == 'high' else 'warning' if frame.risk_level == 'medium' else 'success' }}">
+                            {{ frame.risk_level }}
+                        </span>
+                    </td>
+                    <td>{{ frame.detections_count }}</td>
+                    <td>
+                        <small>
+                            {% for vtype, count in frame.vehicle_counts.items() %}
+                            {{ vtype }}:{{ count }}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </small>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <a href="{{ url_for('detection.detection_page') }}" class="btn btn-primary">
+        <i class="bi bi-arrow-repeat"></i> 继续检测
+    </a>
+</div>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}事故详情{% endblock %}
+
+{% block content %}
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">首页</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('accident.accident_list') }}">事故管理</a></li>
+            <li class="breadcrumb-item active">事故详情</li>
+        </ol>
+    </nav>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">事故详情</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>路段:</strong> {{ accident.road_id }}</p>
+                    <p><strong>严重程度:</strong> 
+                        <span class="badge bg-{{ 'danger' if accident.severity == 'severe' else 'warning' }}">
+                            {{ accident.severity|severity_label }}</span></p>
+                    <p><strong>天气:</strong> {{ accident.weather|weather_label }}</p>
+                    <p><strong>路面:</strong> {{ accident.road_condition|road_condition_label }}</p>
+                    <p><strong>涉及车辆:</strong> {{ accident.vehicle_types|map('vehicle_type_label')|join('、') }}</p>
+                    <p><strong>时间:</strong> {{ accident.timestamp.strftime('%Y-%m-%d %H:%M:%S') if accident.timestamp }}</p>
+                    <hr>
+                    <h6>事故描述</h6>
+                    <p>{{ accident.description }}</p>
+                    <div class="d-flex gap-2 mt-3">
+                        <a href="{{ url_for('accident.accident_edit', accident_id=accident._id) }}" 
+                           class="btn btn-warning">
+                            <i class="bi bi-pencil"></i> 编辑
+                        </a>
+                        <form method="POST" action="{{ url_for('accident.accident_delete', accident_id=accident._id) }}"
+                              onsubmit="return confirm('确定删除该事故吗？')">
+                            <button type="submit" class="btn btn-danger">
+                                <i class="bi bi-trash"></i> 删除
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Neo4j 因果链 -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-primary text-white">
+                    <h6 class="mb-0"><i class="bi bi-diagram-3"></i> Neo4j 事故因果图谱</h6>
+                </div>
+                <div class="card-body">
+                    {% if causal_chain %}
+                    <div class="text-center">
+                        <div class="mb-2 p-2 bg-light rounded">
+                            <strong>☁ 天气:</strong> {{ causal_chain.weather|weather_label if causal_chain.weather else 'N/A' }}
+                        </div>
+                        <div class="mb-2">↓ 导致</div>
+                        <div class="mb-2 p-2 bg-light rounded">
+                            <strong>🛣 路况:</strong> {{ causal_chain.road_condition|road_condition_label if causal_chain.road_condition else 'N/A' }}
+                        </div>
+                        <div class="mb-2">↓ 发生</div>
+                        <div class="mb-2 p-2 bg-danger text-white rounded">
+                            <strong>💥 事故</strong>
+                            {% if causal_chain.severity %}
+                            <br><small>严重程度: {{ {'minor':'轻微','moderate':'一般','severe':'严重','fatal':'致命'}.get(causal_chain.severity, causal_chain.severity) }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="mb-2">↓ 涉及</div>
+                        <div class="p-2 bg-light rounded">
+                            <strong>🚗 车辆类型:</strong> {{ causal_chain.vehicle_type|vehicle_type_label if causal_chain.vehicle_type else 'N/A' }}
+                        </div>
+                    </div>
+                    <hr>
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle"></i> 
+                        此因果链存储在 Neo4j 图数据库中，支持复杂的事故归因分析查询。
+                    </small>
+                    {% else %}
+                    <p class="text-muted text-center">因果链数据不可用（Neo4j 未连接）</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="alert alert-info small">
+                <strong>Neo4j Cypher 查询示例：</strong><br>
+                <code>MATCH (a:Accident)-[:DURING_WEATHER]->(w) RETURN w.type, count(a)</code>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

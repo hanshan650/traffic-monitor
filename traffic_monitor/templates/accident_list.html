@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}事故列表{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between mb-3">
+        <h4><i class="bi bi-exclamation-triangle text-danger"></i> 交通事故记录（MongoDB + Neo4j 因果图谱）</h4>
+        <a href="{{ url_for('accident.accident_report') }}" class="btn btn-danger">
+            <i class="bi bi-plus-circle"></i> 上报事故
+        </a>
+    </div>
+
+    {% if accidents %}
+    <div class="row">
+        {% for acc in accidents %}
+        <div class="col-md-6 mb-3">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="badge bg-{{ 'danger' if acc.severity == 'severe' or acc.severity == 'fatal' else 'warning' if acc.severity == 'moderate' else 'info' }}">
+                            {{ acc.severity|severity_label }}
+                        </span>
+                        <small class="text-muted">{{ acc.timestamp|time_ago }}</small>
+                    </div>
+                    <p class="mb-1"><strong>路段:</strong> {{ acc.road_id }}</p>
+                    <p class="mb-1 text-truncate">{{ acc.description }}</p>
+                    <div class="mt-2">
+                        <small class="me-2">🌤 {{ acc.weather|weather_label }}</small>
+                        <small class="me-2">🛣 {{ acc.road_condition|road_condition_label }}</small>
+                        <small>🚗 {{ acc.vehicle_types|map('vehicle_type_label')|join('、') }}</small>
+                    </div>
+                    <div class="mt-2 d-flex gap-1">
+                        <a href="{{ url_for('accident.accident_detail', accident_id=acc._id) }}" 
+                           class="btn btn-sm btn-outline-primary">
+                            详情 →
+                        </a>
+                        <a href="{{ url_for('accident.accident_edit', accident_id=acc._id) }}" 
+                           class="btn btn-sm btn-outline-warning">
+                            ✎ 编辑
+                        </a>
+                        <form method="POST" action="{{ url_for('accident.accident_delete', accident_id=acc._id) }}"
+                              onsubmit="return confirm('确定删除该事故记录吗？此操作不可撤销。')" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">✕ 删除</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-check-circle display-1"></i>
+        <p class="mt-3">暂无事故记录</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

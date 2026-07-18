@@ -1,0 +1,11 @@
+{% if recent_alerts %}
+{% for alert in recent_alerts %}
+<div class="border-bottom p-2">
+    <small class="text-{{ 'danger' if alert.type == 'accident' else 'warning' }} fw-bold">[{{ '事故' if alert.type == 'accident' else '拥堵' if alert.type == 'congestion' else alert.type }}]</small>
+    <small>{{ alert.data.message }}</small>
+    <br><small class="text-muted">{{ alert.timestamp[:19] if alert.timestamp }}</small>
+</div>
+{% endfor %}
+{% else %}
+<p class="text-center text-muted py-3">✅ 暂无预警</p>
+{% endif %}

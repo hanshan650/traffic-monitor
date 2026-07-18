@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}数据统计{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h4 class="mb-4"><i class="bi bi-graph-up"></i> 数据统计分析</h4>
+
+    <div class="row g-3">
+        <!-- 检测统计（MongoDB 聚合） -->
+        <div class="col-lg-7">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-primary text-white">
+                    <h6 class="mb-0">最近24小时检测统计（MongoDB Aggregation）</h6>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>拥堵等级</th><th>检测次数</th><th>平均车流量</th><th>最大车流量</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for stat in detection_stats %}
+                            <tr>
+                                <td><span class="badge bg-{{ stat._id|congestion_color }}">{{ stat._id|congestion_label }}</span></td>
+                                <td>{{ stat.count }}</td>
+                                <td>{{ "%.1f"|format(stat.avg_vehicles) }}</td>
+                                <td>{{ stat.max_vehicles }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 路网摘要 -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0">路网摘要（Neo4j + MongoDB）</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-3"><h4>{{ network_summary.intersections }}</h4><small>路口</small></div>
+                        <div class="col-3"><h4>{{ network_summary.roads }}</h4><small>路段</small></div>
+                        <div class="col-3"><h4>{{ network_summary.avg_length_km }}km</h4><small>平均长度</small></div>
+                        <div class="col-3"><h4>{{ network_summary.total_length_km }}km</h4><small>总长度</small></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 事故统计 -->
+        <div class="col-lg-5">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-danger text-white">
+                    <h6 class="mb-0">事故严重程度分布</h6>
+                </div>
+                <div class="card-body">
+                    {% if accident_stats.by_severity %}
+                    {% for sev, count in accident_stats.by_severity.items() %}
+                    <div class="mb-2">
+                        <span class="small">{{ sev|severity_label }}</span>
+                        <div class="progress" style="height:20px;">
+                            <div class="progress-bar bg-{{ 'danger' if sev == 'severe' else 'warning' if sev == 'moderate' else 'info' }}" 
+                                 style="width:{{ (count / accident_stats.total * 100)|int }}%">
+                                {{ count }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="text-muted">暂无数据</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Neo4j 事故归因 -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white">
+                    <h6 class="mb-0"><i class="bi bi-diagram-3"></i> 事故归因分析（Neo4j）</h6>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>天气</th><th>路况</th><th>车辆</th><th>次数</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for cause in accident_stats.cause_analysis[:8] %}
+                            <tr>
+                                <td>{{ cause.weather|weather_label }}</td>
+                                <td>{{ cause.road_condition|road_condition_label }}</td>
+                                <td>{{ cause.vehicle_type|vehicle_type_label }}</td>
+                                <td><span class="badge bg-danger">{{ cause.count }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

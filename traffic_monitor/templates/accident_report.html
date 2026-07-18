@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}事故上报{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <h3 class="mb-4"><i class="bi bi-plus-circle text-danger"></i> 交通事故上报</h3>
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">路段 <span class="text-danger">*</span></label>
+                                <select class="form-select" name="road_id" required>
+                                    {% for i in range(1, 13) %}
+                                    <option value="R{{ '%03d'|format(i) }}">R{{ '%03d'|format(i) }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">严重程度 <span class="text-danger">*</span></label>
+                                <select class="form-select" name="severity" required>
+                                    <option value="minor">轻微</option>
+                                    <option value="moderate" selected>一般</option>
+                                    <option value="severe">严重</option>
+                                    <option value="fatal">致命</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">天气状况</label>
+                                <select class="form-select" name="weather">
+                                    <option value="sunny">晴天</option>
+                                    <option value="rain">雨天</option>
+                                    <option value="snow">雪天</option>
+                                    <option value="fog">雾天</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">路面状况</label>
+                                <select class="form-select" name="road_condition">
+                                    <option value="dry">干燥</option>
+                                    <option value="wet">湿滑</option>
+                                    <option value="icy">结冰</option>
+                                    <option value="damaged">损坏</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">涉及车辆类型</label>
+                            <div class="d-flex gap-3">
+                                <label class="form-check"><input class="form-check-input" type="checkbox" name="vehicle_types" value="car" checked> 小汽车</label>
+                                <label class="form-check"><input class="form-check-input" type="checkbox" name="vehicle_types" value="bus"> 公交车</label>
+                                <label class="form-check"><input class="form-check-input" type="checkbox" name="vehicle_types" value="truck"> 卡车</label>
+                                <label class="form-check"><input class="form-check-input" type="checkbox" name="vehicle_types" value="motorcycle"> 摩托车</label>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">经度</label>
+                                <input type="number" class="form-control" name="lng" step="0.0001" placeholder="114.3055">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">纬度</label>
+                                <input type="number" class="form-control" name="lat" step="0.0001" placeholder="30.5928">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">事故描述 <span class="text-danger">*</span></label>
+                            <textarea class="form-control" name="description" rows="3" required 
+                                      placeholder="请描述事故发生经过..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-danger w-100">
+                            <i class="bi bi-send"></i> 提交事故报告
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

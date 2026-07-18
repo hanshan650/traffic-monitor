@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}检测历史{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h4 class="mb-3"><i class="bi bi-clock-history"></i> 检测历史记录（MongoDB）</h4>
+
+    <div class="mb-3">
+        <form method="GET" class="row g-2">
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" name="camera_id">
+                    <option value="">全部监测点</option>
+                    {% for cam in cameras %}
+                    <option value="{{ cam.camera_id }}" {% if current_camera == cam.camera_id %}selected{% endif %}>
+                        {{ cam.camera_id }} - {{ cam.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-primary">筛选</button>
+                <a href="{{ url_for('detection.detection_history') }}" class="btn btn-sm btn-outline-secondary">清除</a>
+            </div>
+        </form>
+    </div>
+
+    {% if detections %}
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>监测点</th><th>路段</th><th>车流量</th><th>拥堵</th>
+                    <th>风险</th><th>时间</th><th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for det in detections %}
+                <tr>
+                    <td>{{ det.camera_id }}</td>
+                    <td>{{ det.road_id }}</td>
+                    <td><strong>{{ det.total_vehicles }}</strong></td>
+                    <td><span class="badge bg-{{ det.congestion_level|congestion_color }}">{{ det.congestion_level|congestion_label }}</span></td>
+                    <td><span class="badge bg-{{ 'danger' if det.risk_level == 'high' else 'warning' if det.risk_level == 'medium' else 'success' }}">{{ det.risk_level|risk_level_label }}</span></td>
+                    <td><small>{{ det.timestamp|time_ago }}</small></td>
+                    <td><a href="{{ url_for('detection.detection_result', detection_id=det._id) }}" class="btn btn-sm btn-outline-primary">详情</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <nav>
+        <ul class="pagination justify-content-center">
+            {% for p in range(1, total_pages + 1) %}
+            <li class="page-item {% if p == page %}active{% endif %}">
+                <a class="page-link" href="?page={{ p }}&camera_id={{ current_camera }}">{{ p }}</a>
+            </li>
+            {% endfor %}
+        </ul>
+    </nav>
+    {% endif %}
+    {% else %}
+    <p class="text-center text-muted py-5">暂无检测记录</p>
+    {% endif %}
+</div>
+{% endblock %}

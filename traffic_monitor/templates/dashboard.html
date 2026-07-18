@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}实时监控大屏{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4><i class="bi bi-display"></i> 实时交通监控大屏</h4>
+        <span class="badge bg-success live-dot fs-6">● LIVE <small id="updateTime"></small></span>
+    </div>
+
+    <div class="row g-3">
+        <!-- 实时监测面板 -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-dark text-white">
+                    <h6 class="mb-0"><i class="bi bi-broadcast"></i> 监测点实时数据（Redis 缓存）</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div id="snapshotPanel">
+                        {% include 'partials/_snapshot_table.html' %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 拥堵排行 + 预警 -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-danger text-white">
+                    <h6 class="mb-0"><i class="bi bi-bar-chart"></i> 拥堵排行 Top 10</h6>
+                </div>
+                <div class="card-body p-0" id="congestionPanel">
+                    {% include 'partials/_congestion_list.html' %}
+                </div>
+            </div>
+            <div class="card shadow-sm">
+                <div class="card-header bg-warning text-dark">
+                    <h6 class="mb-0"><i class="bi bi-bell"></i> 最新预警（Redis 队列）</h6>
+                </div>
+                <div class="card-body p-0" style="max-height:350px;overflow-y:auto;" id="alertPanel">
+                    {% include 'partials/_alert_list.html' %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 仅更新 LIVE 时间显示，每秒刷新
+function updateLiveTime() {
+    var el = document.getElementById('updateTime');
+    if (el) el.textContent = new Date().toLocaleTimeString('zh-CN');
+}
+setInterval(updateLiveTime, 1000);
+updateLiveTime();
+
+// 页面数据每30秒自动刷新一次
+setInterval(() => location.reload(), 30000);
+</script>
+{% endblock %}

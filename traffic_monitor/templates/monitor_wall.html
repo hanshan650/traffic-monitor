@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %}多路监控大屏{% endblock %}
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<style>
+    .monitor-grid { display: grid; gap: 8px; }
+    .monitor-grid.cols2 { grid-template-columns: 1fr 1fr; }
+    .monitor-grid.cols3 { grid-template-columns: 1fr 1fr 1fr; }
+    .monitor-grid.cols4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+    .cam-tile { background:#1a1a2e; border-radius:8px; overflow:hidden; position:relative; min-height:300px; }
+    .cam-tile video { width:100%; height:100%; object-fit:cover; background:#000; }
+    .cam-tile .overlay { position:absolute; bottom:0; left:0; right:0; 
+        background:linear-gradient(transparent,rgba(0,0,0,0.85)); padding:12px 10px 8px; }
+    .cam-tile .cam-name { color:#fff; font-size:13px; font-weight:bold; }
+    .cam-tile .detect-info { font-size:12px; }
+    .cam-tile .detect-bar { height:3px; border-radius:2px; transition:width 0.5s; }
+    .stats-bar { background:#16213e; color:#0ff; padding:6px 16px; border-radius:8px; 
+        font-family:'Courier New',monospace; font-size:13px; }
+    .add-cam-panel { background:#16213e; border-radius:8px; padding:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 py-2">
+    <!-- 顶部统计栏 -->
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h5 class="mb-0 text-light"><i class="bi bi-grid-3x3-gap"></i> 多路高速监控大屏</h5>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="stats-bar"><i class="bi bi-camera-video"></i> 监控路数: <strong id="camCount">0</strong></span>
+            <span class="stats-bar"><i class="bi bi-car-front"></i> 总车流量: <strong id="totalVehicles">0</strong></span>
+            <span class="stats-bar"><i class="bi bi-exclamation-triangle text-warning"></i> 拥堵: <strong id="congestionCount" class="text-warning">0</strong></span>
+            <span class="stats-bar"><i class="bi bi-clock"></i> <span id="wallTime">--:--:--</span></span>
+            <select class="form-select form-select-sm" style="width:auto;background:#16213e;color:#fff;border-color:#333;" id="gridCols" onchange="changeGrid()">
+                <option value="2">2列</option>
+                <option value="3" selected>3列</option>
+                <option value="4">4列</option>
+            </select>
+            <button class="btn btn-sm btn-outline-info" onclick="toggleAddPanel()">+ 添加摄像头</button>
+            <button class="btn btn-sm btn-outline-warning" onclick="detectAll()">📷 全部检测</button>
+        </div>
+    </div>
+
+    <!-- 添加面板 -->
+    <div id="addPanel" class="add-cam-panel mb-2" style="display:none;">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-light mb-0">摄像头ID（河南高速）</label>
+                <input type="text" class="form-control form-control-sm" id="newCamId" placeholder="1324629868805103618">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-light mb-0">或 M3U8 直链</label>
+                <input type="text" class="form-control form-control-sm" id="newM3u8" placeholder="https://...m3u8">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-light mb-0">标签名</label>
+                <input type="text" class="form-control form-control-sm" id="newLabel" placeholder="摄像头1">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-light mb-0">路段</label>
+                <select class="form-select form-select-sm" id="newRoad">
+                    {% for i in range(1, 13) %}
+                    <option value="R{{ '%03d'|format(i) }}">R{{ '%03d'|format(i) }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-success btn-sm w-100" onclick="addCamera()">添加</button>
+                <button class="btn btn-outline-secondary btn-sm w-100 mt-1" onclick="addPresetCameras()">随机添加8路</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 监控网格 -->
+    <div class="monitor-grid cols3" id="monitorGrid">
+        <div class="cam-tile d-flex align-items-center justify-content-center text-muted" id="emptyHint" style="grid-column:1/-1;">
+            <div class="text-center">
+                <i class="bi bi-camera-video-off" style="font-size:4rem;"></i>
+                <p class="mt-2">点击「添加摄像头」开始监控</p>
+                <button class="btn btn-outline-info btn-sm" onclick="addPresetCameras()">🚗 随机加载河南高速摄像头</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 摄像头配置列表
+let cameras = [];
+let detectTimers = {};
+let totalStats = {vehicles:0, congestion:0};
+
+async function addPresetCameras() {
+    document.getElementById('addPanel').style.display = 'none';
+    
+    // 收集已添加的摄像头 ID
+    const existingIds = cameras.filter(c => c && c.id).map(c => c.id).join(',');
+    
+    try {
+        const resp = await fetch(`/detection/api/hngs-camera-list?count=8&exclude=${existingIds}`);
+        const data = await resp.json();
+        
+        if (data.success && data.cameras) {
+            let added = 0, failed = 0;
+            for (const cam of data.cameras) {
+                const result = await addCameraById(cam.cameraNum, cam.cameraName || cam.cameraNum, 'R00'+(added+1), true);
+                if (result === 'added') added++;
+                else if (result === 'failed') failed++;
+            }
+            if (added === 0) {
+                alert(`已无更多摄像头可添加（共 ${data.total_all} 个，已全部添加）`);
+            } else if (failed > 0) {
+                alert(`成功添加 ${added} 路，${failed} 路失败`);
+            }
+        } else {
+            alert('获取摄像头列表失败: ' + (data.error || '未知错误'));
+        }
+    } catch(e) {
+        alert('请求失败: ' + e.message);
+    }
+}
+
+function changeGrid() {
+    const cols = document.getElementById('gridCols').value;
+    const grid = document.getElementById('monitorGrid');
+    grid.className = 'monitor-grid cols' + cols;
+}
+
+function toggleAddPanel() {
+    const p = document.getElementById('addPanel');
+    p.style.display = p.style.display === 'none' ? '' : 'none';
+}
+
+async function addCamera() {
+    const id = document.getElementById('newCamId').value.trim();
+    const m3u8 = document.getElementById('newM3u8').value.trim();
+    const label = document.getElementById('newLabel').value.trim() || ('摄像头'+(cameras.length+1));
+    const road = document.getElementById('newRoad').value;
+    
+    if (id) {
+        await addCameraById(id, label, road);
+    } else if (m3u8) {
+        addCameraDirect(m3u8, label, road);
+    }
+    document.getElementById('addPanel').style.display = 'none';
+}
+
+async function addCameraById(camId, label, road, silent) {
+    // 检查是否已存在相同 ID
+    if (cameras.some(c => c && c.id === camId)) {
+        if (!silent) alert(`摄像头已在监控列表中`);
+        return 'skipped';
+    }
+    // 通过 API 获取 M3U8 地址
+    try {
+        const resp = await fetch(`/detection/api/hngs-camera-url?cameraNum=${camId}`);
+        const data = await resp.json();
+        if (data.success) {
+            addCameraDirect(data.m3u8_url, label, road, camId);
+            return 'added';
+        } else {
+            if (!silent) alert(`获取失败: ` + (data.error||'未知错误'));
+            return 'failed';
+        }
+    } catch(e) {
+        if (!silent) alert('请求失败: ' + e.message);
+        return 'failed';
+    }
+}
+
+function addCameraDirect(m3u8Url, label, road, camId) {
+    // 检查是否已存在相同 ID
+    if (camId && cameras.some(c => c && c.id === camId)) {
+        alert(`摄像头 ${camId}（${label}）已在监控列表中`);
+        return;
+    }
+    const idx = cameras.length;
+    const tileId = 'camTile' + idx;
+    
+    cameras.push({
+        id: camId || ('custom_'+idx),
+        label: label,
+        road: road,
+        m3u8: m3u8Url,
+        tileId: tileId,
+        lastResult: null,
+    });
+    
+    document.getElementById('emptyHint').style.display = 'none';
+    
+    const grid = document.getElementById('monitorGrid');
+    const tile = document.createElement('div');
+    tile.className = 'cam-tile';
+    tile.id = tileId;
+    tile.innerHTML = `
+        <video id="video${idx}" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
+        <div class="overlay">
+            <div class="d-flex justify-content-between align-items-start">
+                <span class="cam-name">📡 ${label}</span>
+                <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeCamera(${idx})" title="移除">✕</button>
+            </div>
+            <div class="detect-info text-light mt-1" id="info${idx}">
+                <span class="text-muted">等待检测...</span>
+            </div>
+            <div class="detect-bar bg-secondary" id="bar${idx}" style="width:0%;"></div>
+        </div>`;
+    grid.appendChild(tile);
+    
+    // 播放 M3U8
+    const video = document.getElementById('video'+idx);
+    if (Hls.isSupported()) {
+        const h = new Hls({maxBufferLength:5});
+        h.loadSource(m3u8Url);
+        h.attachMedia(video);
+        h.on(Hls.Events.ERROR, () => {
+            document.getElementById('info'+idx).innerHTML = '<span class="text-danger">流加载失败</span>';
+        });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = m3u8Url;
+    }
+    
+    // 启动自动检测（每5秒）
+    startAutoDetect(idx);
+    
+    updateStats();
+}
+
+function startAutoDetect(idx) {
+    if (detectTimers[idx]) clearInterval(detectTimers[idx]);
+    detectTimers[idx] = setInterval(() => detectCamera(idx), 5000);
+    // 立即执行一次
+    setTimeout(() => detectCamera(idx), 2000);
+}
+
+async function detectCamera(idx) {
+    const video = document.getElementById('video'+idx);
+    if (!video || video.videoWidth === 0) return;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    
+    canvas.toBlob(async blob => {
+        const fd = new FormData();
+        fd.append('image', blob, 'wall_'+idx+'.jpg');
+        fd.append('camera_id', 'WALL_'+cameras[idx].id);
+        fd.append('road_id', cameras[idx].road);
+        
+        try {
+            const resp = await fetch('/detection/api/detect', {method:'POST', body:fd});
+            const data = await resp.json();
+            if (data.success) {
+                cameras[idx].lastResult = data;
+                updateTile(idx, data);
+                updateStats();
+            }
+        } catch(e) { console.log('检测失败:', e); }
+    }, 'image/jpeg', 0.7);
+}
+
+function updateTile(idx, data) {
+    const level = data.congestion_level || 'normal';
+    const labels = {normal:'畅通', light:'轻度拥堵', moderate:'中度拥堵', heavy:'严重拥堵'};
+    const colors = {normal:'#00ff88', light:'#ffcc00', moderate:'#ff8800', heavy:'#ff3333'};
+    const barWidths = {normal:'25%', light:'50%', moderate:'75%', heavy:'100%'};
+    
+    let countsHtml = '';
+    if (data.vehicle_counts) {
+        Object.entries(data.vehicle_counts).forEach(([k,v]) => {
+            countsHtml += `<span class="me-1">${k}:${v}</span>`;
+        });
+    }
+    
+    document.getElementById('info'+idx).innerHTML = `
+        <span style="color:${colors[level]}">🚗 <strong>${data.total_vehicles||0}辆</strong> ${labels[level]}</span>
+        <span class="ms-2 text-white-50">${countsHtml}</span>`;
+    
+    const bar = document.getElementById('bar'+idx);
+    bar.style.width = barWidths[level];
+    bar.className = 'detect-bar';
+    bar.style.backgroundColor = colors[level];
+}
+
+function removeCamera(idx) {
+    if (detectTimers[idx]) clearInterval(detectTimers[idx]);
+    delete detectTimers[idx];
+    
+    const tile = document.getElementById('camTile'+idx);
+    if (tile) tile.remove();
+    cameras[idx] = null;
+    
+    if (cameras.filter(c=>c).length === 0) {
+        document.getElementById('emptyHint').style.display = '';
+    }
+    updateStats();
+}
+
+async function detectAll() {
+    const active = cameras.map((c,i) => c ? i : -1).filter(i => i >= 0);
+    for (const idx of active) {
+        await detectCamera(idx);
+    }
+}
+
+function updateStats() {
+    const active = cameras.filter(c => c);
+    let totalV = 0, congCount = 0;
+    active.forEach(c => {
+        if (c.lastResult) {
+            totalV += c.lastResult.total_vehicles || 0;
+            if ((c.lastResult.congestion_level||'') === 'heavy') congCount++;
+        }
+    });
+    document.getElementById('camCount').textContent = active.length;
+    document.getElementById('totalVehicles').textContent = totalV;
+    document.getElementById('congestionCount').textContent = congCount;
+}
+
+// 时钟
+setInterval(() => {
+    document.getElementById('wallTime').textContent = new Date().toLocaleTimeString('zh-CN');
+}, 1000);
+document.getElementById('wallTime').textContent = new Date().toLocaleTimeString('zh-CN');
+
+// 初始化
+changeGrid();
+</script>
+{% endblock %}

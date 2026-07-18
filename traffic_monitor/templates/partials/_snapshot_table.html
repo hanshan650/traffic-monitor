@@ -1,0 +1,25 @@
+<!-- 实时快照表格（AJAX 更新） -->
+{% if snapshots %}
+<div class="table-responsive">
+    <table class="table table-hover mb-0">
+        <thead class="table-dark">
+            <tr>
+                <th>监测点</th><th>车流量</th><th>拥堵</th><th>风险</th><th>时间</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cam_id, snap in snapshots.items() %}
+            <tr>
+                <td><strong>{{ cam_id }}</strong></td>
+                <td><span class="fw-bold">{{ snap.total_vehicles }}</span> 辆</td>
+                <td><span class="badge bg-{{ snap.congestion_level|congestion_color }}">{{ snap.congestion_level|congestion_label }}</span></td>
+                <td><span class="badge bg-{{ 'danger' if snap.risk_level == 'high' else 'warning' if snap.risk_level == 'medium' else 'success' }}">{{ snap.risk_level|risk_level_label }}</span></td>
+                <td><small>{{ snap.timestamp[:19] if snap.timestamp }}</small></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-center text-muted py-4">暂无实时数据</p>
+{% endif %}

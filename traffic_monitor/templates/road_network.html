@@ -1,0 +1,613 @@
+{% extends "base.html" %}
+{% block title %}智能交通监测地图{% endblock %}
+{% block extra_css %}
+<style>
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    .navbar { margin-bottom: 0 !important; z-index: 1000; }
+    #mapContainer { width: 100%; height: calc(100vh - 56px); }
+    .control-panel { position: absolute; top: 10px; left: 10px; z-index: 100;
+        background: rgba(255,255,255,0.95); border-radius: 10px; padding: 12px;
+        box-shadow: 0 2px 20px rgba(0,0,0,0.3); width: 340px; max-height: calc(100vh - 100px);
+        overflow-y: auto; font-size: 13px; backdrop-filter: blur(10px); }
+    .control-panel .nav-tabs .nav-link { font-size: 12px; padding: 4px 10px; }
+    .control-panel .nav-tabs .nav-link.active { font-weight: bold; }
+    .layer-toggle { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+    .layer-toggle .btn { font-size: 11px; padding: 3px 8px; border-radius: 14px; }
+    .layer-toggle .btn.active { border: 2px solid #0d6efd; }
+    .stat-bar { position: absolute; top: 10px; right: 10px; z-index: 100;
+        background: rgba(0,0,0,0.75); border-radius: 10px; padding: 10px 14px;
+        color: #fff; font-size: 12px; min-width: 180px; }
+    .stat-bar .val { font-size: 16px; font-weight: bold; }
+    .stat-bar .badge { font-size: 10px; }
+    .cam-popup { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+        z-index: 200; background: #1a1a2e; border-radius: 14px; padding: 0;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5); display: none; width: 560px;
+        color: #eee; overflow: hidden; }
+    .cam-popup .cam-header { background: linear-gradient(135deg,#0d6efd,#6610f2);
+        padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
+    .cam-popup .cam-header .close { cursor: pointer; font-size: 18px; color: #fff; opacity:0.7; }
+    .cam-popup .cam-header .close:hover { opacity:1; }
+    .cam-popup .cam-body { padding: 12px 16px; }
+    .cam-popup .video-wrap { position: relative; background: #000; border-radius: 8px;
+        overflow: hidden; margin-bottom: 10px; min-height: 280px; display: flex;
+        align-items: center; justify-content: center; }
+    .cam-popup video { width: 100%; max-height: 320px; background: #000; }
+    .cam-popup .video-placeholder { color: #666; text-align: center; }
+    .cam-popup .detect-overlay { position: absolute; top: 8px; right: 8px;
+        background: rgba(0,0,0,0.7); color: #0f0; padding: 2px 8px; border-radius: 10px;
+        font-size: 11px; display: none; }
+    .cam-popup .cam-footer { display: flex; gap: 6px; flex-wrap: wrap; }
+    .cam-popup .cam-footer .btn { font-size: 12px; }
+    .preset a { text-decoration: none; font-size: 11px; }
+    .legend { position: absolute; bottom: 10px; left: 10px; z-index: 100;
+        background: rgba(0,0,0,0.7); border-radius: 8px; padding: 6px 10px;
+        color: #eee; font-size: 11px; display: flex; gap: 12px; }
+    .legend span { display: flex; align-items: center; gap: 4px; }
+    .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="position-relative">
+    <div id="mapContainer"></div>
+
+    <!-- 左侧控制面板 -->
+    <div class="control-panel" id="ctrlPanel">
+        <ul class="nav nav-tabs mb-2" id="ctrlTab">
+            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-route">🧭 导航</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-layer">📡 图层</a></li>
+        </ul>
+        <div class="tab-content">
+            <!-- 导航 tab -->
+            <div class="tab-pane active" id="tab-route">
+                <div class="mb-2">
+                    <label class="form-label small mb-1 fw-bold">🟢 出发地</label>
+                    <input type="text" class="form-control form-control-sm" id="startInput" placeholder="如：人民广场">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-1 fw-bold">🔴 目的地</label>
+                    <input type="text" class="form-control form-control-sm" id="endInput" placeholder="如：虹桥火车站">
+                </div>
+                <button class="btn btn-primary btn-sm w-100 mb-1" onclick="doRoute()">🔍 规划路线</button>
+                <button class="btn btn-outline-secondary btn-sm w-100 mb-2" onclick="clearAll()">✕ 清除路线</button>
+                <div id="routeDetail" class="small text-muted mb-2"></div>
+                <div class="border-top pt-2 preset">
+                    <strong class="small">常用：</strong>
+                    <a href="#" onclick="return quick('人民广场','虹桥火车站')">人民广场→虹桥</a> ·
+                    <a href="#" onclick="return quick('陆家嘴','徐家汇')">陆家嘴→徐家汇</a> ·
+                    <a href="#" onclick="return quick('五角场','上海南站')">五角场→南站</a> ·
+                    <a href="#" onclick="return quick('静安寺','外滩')">静安寺→外滩</a> ·
+                    <a href="#" onclick="return quick('虹桥火车站','浦东国际机场')">虹桥→浦东机场</a>
+                </div>
+            </div>
+            <!-- 图层 tab -->
+            <div class="tab-pane" id="tab-layer">
+                <small class="text-muted fw-bold d-block mb-1">🖼️ 图层控制</small>
+                <div class="layer-toggle">
+                    <button class="btn btn-sm btn-outline-secondary active" data-layer="traffic" onclick="toggleLayer('traffic',this)">🚦 实时路况</button>
+                    <button class="btn btn-sm btn-outline-primary" data-layer="network" onclick="toggleLayer('network',this)">🛣️ 上海路网</button>
+                    <button class="btn btn-sm btn-outline-danger" data-layer="cameras" onclick="toggleLayer('cameras',this)">📷 河南相机</button>
+                    <button class="btn btn-sm btn-outline-info" data-layer="monitor" onclick="toggleLayer('monitor',this)">📊 监测点</button>
+                </div>
+                <small class="text-muted fw-bold d-block mb-1 mt-2">🎯 快速定位</small>
+                <div class="d-grid gap-1">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="flyTo('shanghai')">📍 上海城区</button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="flyTo('henan')">📍 河南高速</button>
+                </div>
+                <hr class="my-2">
+                <div id="camStats" style="display:none;">
+                    <small class="fw-bold">📷 河南相机统计</small>
+                    <div class="small text-muted">
+                        总数: <strong id="camTotal">-</strong> | 在线: <strong id="camOnline" class="text-success">-</strong>
+                    </div>
+                </div>
+                <div id="netStats">
+                    <small class="fw-bold">🛣️ 上海路网统计</small>
+                    <div class="small text-muted" id="netStatsInner">加载中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧实时统计 -->
+    <div class="stat-bar" id="statBar">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📡 实时监测</span>
+            <span class="badge bg-success" id="refreshBadge" style="font-size:9px;">在线</span>
+        </div>
+        <div class="mt-1">🚗 车辆: <span class="val" id="statVehicles">-</span></div>
+        <div>⚠️ 预警: <span class="val text-warning" id="statAlerts">-</span></div>
+        <div>🚨 事故: <span class="val text-danger" id="statAccidents">-</span></div>
+        <div>📷 相机: <span class="val" id="statCameras">-</span></div>
+    </div>
+
+    <!-- 相机实时监控弹窗 -->
+    <div class="cam-popup" id="camPopup">
+        <div class="cam-header">
+            <strong id="camPopName" style="font-size:14px;">📷 选择相机查看</strong>
+            <span class="close" onclick="closeCamPopup()">✕</span>
+        </div>
+        <div class="cam-body">
+            <div class="video-wrap" id="videoWrap">
+                <div class="video-placeholder" id="videoPlaceholder">
+                    <div style="font-size:40px;">📹</div>
+                    <div>点击「连接视频流」开始监控</div>
+                </div>
+                <video id="camVideo" muted autoplay playsinline style="display:none;"></video>
+                <div class="detect-overlay" id="detectOverlay">
+                    🚗 <span id="detectCount">0</span> 辆车 | <span id="detectLevel">-</span>
+                </div>
+            </div>
+            <div class="row small mb-2">
+                <div class="col-6"><span class="text-muted">道路:</span> <span id="camPopRoad">-</span></div>
+                <div class="col-6"><span class="text-muted">桩号:</span> <span id="camPopPile">-</span></div>
+                <div class="col-6"><span class="text-muted">区域:</span> <span id="camPopRegion">-</span></div>
+                <div class="col-6"><span class="text-muted">状态:</span> <span id="camPopStatus">-</span></div>
+            </div>
+            <div class="cam-footer">
+                <button class="btn btn-sm btn-primary" id="btnConnect" onclick="connectStream()">🔗 连接视频流</button>
+                <button class="btn btn-sm btn-success" id="btnDetect" onclick="runDetection()" disabled>🤖 YOLO检测</button>
+                <button class="btn btn-sm btn-outline-warning" onclick="autoDetectToggle()" id="btnAutoDetect" disabled>🔄 自动检测: 关</button>
+                <button class="btn btn-sm btn-outline-light" onclick="captureSnapshot()" id="btnSnapshot" disabled>📸 截图分析</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图例 -->
+    <div class="legend">
+        <span><span class="dot" style="background:#00cc66;"></span> 畅通</span>
+        <span><span class="dot" style="background:#ffcc00;"></span> 轻度</span>
+        <span><span class="dot" style="background:#ff8800;"></span> 中度</span>
+        <span><span class="dot" style="background:#ff0000;"></span> 拥堵</span>
+        <span><span class="dot" style="background:#ff4d4d;"></span> 相机</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=a1fc0ec5f3b78143136030409f1c6e59&plugin=AMap.AutoComplete,AMap.TileLayer.Traffic"></script>
+<script>
+var map, trafficLayer;
+var routeLines=[], startMarker=null, endMarker=null;
+var networkNodes=[], networkEdges=[], cameraMarkers=[], monitorMarkers=[];
+var layerState = { traffic:true, network:false, cameras:false, monitor:false };
+var curCameraNum = '', curM3u8 = '', curCameraData = null;
+var hls = null, autoDetectTimer = null, autoDetectOn = false;
+
+window.onload = function() {
+    map = new AMap.Map('mapContainer', {
+        center: [121.47, 31.23], zoom: 12,
+        mapStyle: 'amap://styles/darkblue',
+        resizeEnable: true,
+    });
+    trafficLayer = new AMap.TileLayer.Traffic({ zIndex: 10 });
+    trafficLayer.setMap(map);
+
+    AMap.plugin('AMap.AutoComplete', function() {
+        new AMap.AutoComplete({ input: 'startInput', city: '上海' });
+        new AMap.AutoComplete({ input: 'endInput', city: '上海' });
+    });
+
+    document.getElementById('startInput').value = '人民广场';
+    document.getElementById('endInput').value = '虹桥火车站';
+
+    loadRoadNetwork();
+    refreshStats();
+    setInterval(refreshStats, 30000);
+};
+
+// ==================== 路网加载 ====================
+function loadRoadNetwork() {
+    fetch('/api/road-network').then(function(r){return r.json();}).then(function(data){
+        if(!data.success) return;
+        document.getElementById('netStatsInner').innerHTML =
+            '路口: <strong>'+data.stats.nodes+'</strong> | 路段: <strong>'+data.stats.edges+'</strong><br>'+
+            '拥堵: <strong class="text-danger">'+data.stats.heavy+'</strong> | 缓行: <strong class="text-warning">'+data.stats.moderate+'</strong>';
+        drawRoadNetwork(data);
+    });
+}
+
+function drawRoadNetwork(data) {
+    if (!layerState.network) return;  // 尊重图层状态
+    // 路口节点
+    var nodeMarker=[];
+    data.nodes.forEach(function(n){
+        var m = new AMap.Marker({
+            position: [n.lng, n.lat],
+            title: n.name,
+            content: '<div style="background:#0dcaf0;width:10px;height:10px;border-radius:50%;border:2px solid #fff;"></div>',
+            offset: new AMap.Pixel(-6, -6),
+            label: { content: n.name, direction: 'top', offset: [0, -8],
+                     style: { fontSize:'9px', color:'#fff', background:'rgba(0,0,0,0.7)', padding:'1px 4px', borderRadius:'8px', whiteSpace:'nowrap' }},
+            zIndex: 80,
+        });
+        m.setMap(map);
+        nodeMarker.push(m);
+    });
+    networkNodes = nodeMarker;
+
+    // 路段
+    var edgeColors = {heavy:'#ff0000',moderate:'#ff8800',light:'#ffcc00',normal:'#00cc66'};
+    var edgeLines=[];
+    data.edges.forEach(function(e){
+        var line = new AMap.Polyline({
+            path: [[e.from_lng,e.from_lat],[e.to_lng,e.to_lat]],
+            strokeColor: edgeColors[e.congestion]||'#00cc66',
+            strokeWeight: 4, strokeOpacity: 0.7, zIndex: 30,
+        });
+        line.setMap(map);
+        line.on('click', function(){
+            var level={heavy:'严重拥堵',moderate:'中度拥堵',light:'轻度拥堵',normal:'畅通'};
+            var info = e.name+' | '+(level[e.congestion]||e.congestion)+
+                       ' | 限速'+e.speed_limit+'km/h | '+e.lanes+'车道 | '+e.length+'km';
+            if(e.vehicles>0) info += ' | 实时车辆:'+e.vehicles;
+            showToast(info);
+        });
+        edgeLines.push(line);
+    });
+    networkEdges = edgeLines;
+}
+
+// ==================== 相机加载 ====================
+function loadCameras() {
+    document.getElementById('camStats').style.display='block';
+    fetch('/detection/api/hngs-camera-list?count=100').then(function(r){return r.json();}).then(function(data){
+        if(!data.success) return;
+        document.getElementById('camTotal').textContent = data.total_all;
+        document.getElementById('camOnline').textContent = data.total_available;
+        drawCameras(data.cameras);
+    });
+}
+
+function drawCameras(cameras) {
+    clearMarkers('camera');
+    cameras.forEach(function(c){
+        if(!c.latitude||!c.longitude) return;
+        var isOnline = c.online == 1;
+        var color = isOnline ? '#00e676' : '#ff5252';
+        var m = new AMap.Marker({
+            position: [c.longitude, c.latitude],
+            content: '<div style="background:'+color+';width:12px;height:12px;border-radius:50%;border:2px solid #fff;cursor:pointer;box-shadow:0 0 6px '+color+';" title="'+c.cameraName+'"></div>',
+            offset: new AMap.Pixel(-7, -7),
+            zIndex: 90,
+            extData: c,
+        });
+        m.on('click', function(e){
+            var d = e.target.getExtData();
+            curCameraNum = d.cameraNum;
+            curCameraData = d;
+            // 填充弹窗信息
+            document.getElementById('camPopName').textContent = '📷 ' + d.cameraName;
+            document.getElementById('camPopRoad').textContent = d.road;
+            document.getElementById('camPopPile').textContent = d.pileNum;
+            document.getElementById('camPopRegion').textContent = d.regionName;
+            document.getElementById('camPopStatus').innerHTML = d.online==1?
+                '<span class="text-success">● 在线</span>':'<span class="text-danger">● 离线</span>';
+            document.getElementById('camPopup').style.display='block';
+            // 自动连接视频流
+            if(d.online==1) connectStream();
+        });
+        m.setMap(map);
+        cameraMarkers.push(m);
+    });
+}
+
+// ==================== 监测点 ====================
+function loadMonitorPoints() {
+    clearMarkers('monitor');
+    fetch('/api/road-network').then(function(r){return r.json();}).then(function(data){
+        if(!data.success) return;
+        data.nodes.forEach(function(n){
+            var m = new AMap.Marker({
+                position: [n.lng, n.lat],
+                content: '<div style="background:#ffaa00;width:14px;height:14px;border-radius:50%;border:2px solid #ffdd88;opacity:0.8;"></div>',
+                offset: new AMap.Pixel(-8, -8),
+                zIndex: 70,
+                label: { content: n.name, direction: 'bottom', offset: [0,12],
+                         style: { fontSize:'9px', color:'#ffaa00', background:'rgba(0,0,0,0.6)', padding:'1px 4px', borderRadius:'6px' }},
+            });
+            m.setMap(map);
+            monitorMarkers.push(m);
+        });
+    });
+}
+
+// ==================== 图层切换 ====================
+function toggleLayer(name, btn) {
+    layerState[name] = !layerState[name];
+    if(btn) btn.classList.toggle('active', layerState[name]);
+
+    if(name==='traffic'){
+        if(layerState.traffic) trafficLayer.setMap(map); else trafficLayer.setMap(null);
+    }
+    if(name==='network'){
+        if(layerState.network) { networkNodes.forEach(function(m){m.setMap(map);}); networkEdges.forEach(function(l){l.setMap(map);}); }
+        else { networkNodes.forEach(function(m){m.show();m.setMap(null);}); networkEdges.forEach(function(l){l.setMap(null);}); }
+        // 重新加载
+        if(layerState.network && networkNodes.length===0) loadRoadNetwork();
+    }
+    if(name==='cameras'){
+        if(layerState.cameras) loadCameras();
+        else clearMarkers('camera');
+    }
+    if(name==='monitor'){
+        if(layerState.monitor) loadMonitorPoints();
+        else clearMarkers('monitor');
+    }
+}
+
+function clearMarkers(type) {
+    var arr = type==='camera'?cameraMarkers:type==='monitor'?monitorMarkers:[];
+    arr.forEach(function(m){ m.setMap(null); });
+    if(type==='camera') cameraMarkers=[];
+    if(type==='monitor') monitorMarkers=[];
+}
+
+// ==================== 视图跳转 ====================
+function flyTo(region) {
+    if(region==='shanghai') map.setZoomAndCenter(12, [121.47,31.23]);
+    if(region==='henan') {
+        map.setZoomAndCenter(8, [113.7,34.2]);
+        if(!layerState.cameras) toggleLayer('cameras', document.querySelector('[data-layer=cameras]'));
+    }
+}
+
+// ==================== 实时统计 ====================
+function refreshStats() {
+    Promise.all([
+        fetch('/api/snapshots').then(function(r){return r.json();}),
+        fetch('/api/recent-alerts').then(function(r){return r.json();}),
+    ]).then(function(results){
+        var snaps=results[0], alerts=results[1];
+        var totalV=0;
+        Object.values(snaps||{}).forEach(function(s){ totalV += (s.total_vehicles||0); });
+        document.getElementById('statVehicles').textContent = totalV || '--';
+        document.getElementById('statAlerts').textContent = (alerts||[]).length || '--';
+        document.getElementById('statCameras').textContent = Object.keys(snaps||{}).length || '--';
+        document.getElementById('refreshBadge').textContent = '在线';
+        document.getElementById('refreshBadge').className = 'badge bg-success';
+    }).catch(function(){
+        document.getElementById('refreshBadge').textContent = '离线';
+        document.getElementById('refreshBadge').className = 'badge bg-danger';
+    });
+    // 事故统计
+    fetch('/api/amap-geocode?address=上海').catch(function(){});
+}
+
+// ==================== 路线规划 ====================
+function doRoute() {
+    var start = document.getElementById('startInput').value.trim();
+    var end = document.getElementById('endInput').value.trim();
+    if (!start || !end) { alert('请输入出发地和目的地'); return; }
+    document.getElementById('routeDetail').innerHTML = '<span class="text-info">⏳ 规划中...</span>';
+    clearAll(false);
+
+    Promise.all([
+        fetch('/api/amap-geocode?address='+encodeURIComponent(start)).then(function(r){return r.json();}),
+        fetch('/api/amap-geocode?address='+encodeURIComponent(end)).then(function(r){return r.json();})
+    ]).then(function(results){
+        var sData=results[0], eData=results[1];
+        if(!sData.success){ document.getElementById('routeDetail').innerHTML='❌ 无法解析出发地'; return; }
+        if(!eData.success){ document.getElementById('routeDetail').innerHTML='❌ 无法解析目的地'; return; }
+        var o={lng:sData.lng,lat:sData.lat}, d={lng:eData.lng,lat:eData.lat};
+        return fetch('/api/amap-route?origin='+o.lng+','+o.lat+'&destination='+d.lng+','+d.lat)
+            .then(function(r){return r.json();})
+            .then(function(data){
+                if(data.success) drawRoute(data,o,d);
+                else document.getElementById('routeDetail').innerHTML='❌ '+(data.error||'规划失败');
+            });
+    }).catch(function(e){
+        document.getElementById('routeDetail').innerHTML='❌ 请求失败: '+e.message;
+    });
+}
+
+function drawRoute(data, origin, dest) {
+    var dist=(data.distance/1000).toFixed(1), timeMin=Math.round(data.duration/60);
+    var heavy=0,slow=0;
+    data.steps.forEach(function(s){
+        if(s.traffic_status==='3'||s.traffic_status==='4') heavy++;
+        else if(s.traffic_status==='2') slow++;
+    });
+    var roads=[];
+    data.steps.forEach(function(s){if(s.road&&roads.indexOf(s.road)===-1&&roads.length<8) roads.push(s.road);});
+    document.getElementById('routeDetail').innerHTML=
+        '<strong>✅ '+dist+'km / '+timeMin+'分钟</strong><br>'+
+        (heavy>0?'<span class="text-danger">拥堵'+heavy+'处</span> ':'')+
+        (slow>0?'<span class="text-warning">缓行'+slow+'处</span> ':'')+
+        '<small class="text-muted">'+roads.join(' → ')+'</small>';
+
+    clearRouteOnly();
+    startMarker=new AMap.Marker({position:[origin.lng,origin.lat],
+        content:'<div style="background:#00cc66;color:#fff;padding:3px 10px;border-radius:12px;font-size:13px;">🚩 起</div>',
+        offset:new AMap.Pixel(-20,-40),zIndex:200}); startMarker.setMap(map);
+    endMarker=new AMap.Marker({position:[dest.lng,dest.lat],
+        content:'<div style="background:#ff4444;color:#fff;padding:3px 10px;border-radius:12px;font-size:13px;">📍 终</div>',
+        offset:new AMap.Pixel(-20,-40),zIndex:200}); endMarker.setMap(map);
+
+    var colors={'0':'#00ccff','1':'#ffcc00','2':'#ff8800','3':'#ff0000','4':'#990000'};
+    data.steps.forEach(function(step){
+        if(step.polyline&&step.polyline.length>0){
+            var st=step.traffic_status||'0', color=colors[st]||'#00ccff';
+            var line=new AMap.Polyline({path:step.polyline.map(function(p){return[p[0],p[1]];}),
+                strokeColor:color,strokeWeight:5,strokeOpacity:0.85,zIndex:50});
+            line.setMap(map); routeLines.push(line);
+        }
+    });
+    map.setFitView(null, false, [60,60,360,200]);
+}
+
+function clearRouteOnly(){
+    routeLines.forEach(function(l){map.remove(l);}); routeLines=[];
+    if(startMarker){map.remove(startMarker);startMarker=null;}
+    if(endMarker){map.remove(endMarker);endMarker=null;}
+}
+
+function clearAll(keepInputs){
+    if(!keepInputs){ document.getElementById('startInput').value=''; document.getElementById('endInput').value=''; }
+    clearRouteOnly();
+    document.getElementById('routeDetail').textContent='';
+}
+
+function quick(from,to){
+    document.getElementById('startInput').value=from;
+    document.getElementById('endInput').value=to;
+    doRoute(); return false;
+}
+
+// ==================== 视频流连接 ====================
+function connectStream(){
+    if(!curCameraNum){ alert('请先点击相机标记'); return; }
+    var wrap = document.getElementById('videoWrap');
+    var video = document.getElementById('camVideo');
+    var placeholder = document.getElementById('videoPlaceholder');
+
+    // 先销毁旧流
+    stopStream();
+    placeholder.innerHTML = '<div style="font-size:30px;">⏳</div><div>正在获取视频流...</div>';
+    document.getElementById('camPopup').style.display='block';
+
+    fetch('/detection/api/hngs-camera-url?cameraNum='+curCameraNum)
+    .then(function(r){return r.json();})
+    .then(function(data){
+        if(!data.success || !data.m3u8_url){
+            placeholder.innerHTML = '<div style="font-size:30px;">❌</div><div>无法获取视频流</div>';
+            return;
+        }
+        curM3u8 = data.m3u8_url;
+        placeholder.style.display = 'none';
+        video.style.display = 'block';
+
+        if(Hls.isSupported()){
+            hls = new Hls({ enableWorker: false, lowLatencyMode: true });
+            hls.loadSource(curM3u8);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function(){
+                video.play().catch(function(){});
+                document.getElementById('btnDetect').disabled = false;
+                document.getElementById('btnAutoDetect').disabled = false;
+                document.getElementById('btnSnapshot').disabled = false;
+                document.getElementById('detectOverlay').style.display = 'block';
+            });
+            hls.on(Hls.Events.ERROR, function(event, data){
+                if(data.fatal){
+                    placeholder.style.display = 'block';
+                    placeholder.innerHTML = '<div style="font-size:30px;">⚠️</div><div>视频流中断，点击重连</div>';
+                    video.style.display = 'none';
+                }
+            });
+        } else if(video.canPlayType('application/vnd.apple.mpegurl')){
+            video.src = curM3u8;
+            video.play().catch(function(){});
+            document.getElementById('btnDetect').disabled = false;
+            document.getElementById('btnAutoDetect').disabled = false;
+            document.getElementById('btnSnapshot').disabled = false;
+            document.getElementById('detectOverlay').style.display = 'block';
+        } else {
+            placeholder.innerHTML = '<div style="font-size:30px;">⚠️</div><div>浏览器不支持HLS播放</div>';
+        }
+    }).catch(function(e){
+        placeholder.innerHTML = '<div style="font-size:30px;">❌</div><div>网络错误: '+e.message+'</div>';
+    });
+}
+
+function stopStream(){
+    if(hls){ hls.destroy(); hls = null; }
+    autoDetectStop();
+    var video = document.getElementById('camVideo');
+    video.pause();
+    video.src = '';
+    video.style.display = 'none';
+    document.getElementById('videoPlaceholder').style.display = 'block';
+    document.getElementById('videoPlaceholder').innerHTML = '<div style="font-size:40px;">📹</div><div>点击「连接视频流」开始监控</div>';
+    document.getElementById('btnDetect').disabled = true;
+    document.getElementById('btnAutoDetect').disabled = true;
+    document.getElementById('btnSnapshot').disabled = true;
+    document.getElementById('detectOverlay').style.display = 'none';
+    curM3u8 = '';
+}
+
+// ==================== YOLO 实时检测 ====================
+function runDetection(){
+    if(!curCameraNum){ alert('请先选择相机并连接视频流'); return; }
+    document.getElementById('detectOverlay').style.display = 'block';
+    document.getElementById('detectCount').textContent = '...';
+    document.getElementById('detectLevel').textContent = '检测中';
+
+    fetch('/detection/api/hngs-camera-snapshot?cameraNum='+curCameraNum+'&road_id=M001')
+    .then(function(r){return r.json();})
+    .then(function(d){
+        if(d.success){
+            document.getElementById('detectCount').textContent = d.total_vehicles;
+            var levelMap = {normal:'畅通',light:'轻度拥堵',moderate:'中度拥堵',heavy:'严重拥堵'};
+            document.getElementById('detectLevel').textContent = levelMap[d.congestion_level] || d.congestion_level;
+            var levelColor = {normal:'#0f0',light:'#ff0',moderate:'#f80',heavy:'#f00'};
+            document.getElementById('detectOverlay').style.color = levelColor[d.congestion_level] || '#0f0';
+            document.getElementById('statVehicles').textContent = d.total_vehicles;
+            showToast('✅ 检测完成: '+d.total_vehicles+'辆车, '+document.getElementById('detectLevel').textContent);
+        } else {
+            document.getElementById('detectCount').textContent = '!';
+            document.getElementById('detectLevel').textContent = d.error || '失败';
+        }
+    }).catch(function(e){
+        document.getElementById('detectCount').textContent = '!';
+        document.getElementById('detectLevel').textContent = '错误';
+    });
+}
+
+// ==================== 自动检测 ====================
+function autoDetectToggle(){
+    if(autoDetectOn){ autoDetectStop(); }
+    else { autoDetectStart(); }
+}
+
+function autoDetectStart(){
+    autoDetectOn = true;
+    document.getElementById('btnAutoDetect').textContent = '🔄 自动检测: 开';
+    document.getElementById('btnAutoDetect').className = 'btn btn-sm btn-warning';
+    runDetection();
+    autoDetectTimer = setInterval(runDetection, 10000);
+}
+
+function autoDetectStop(){
+    autoDetectOn = false;
+    document.getElementById('btnAutoDetect').textContent = '🔄 自动检测: 关';
+    document.getElementById('btnAutoDetect').className = 'btn btn-sm btn-outline-warning';
+    if(autoDetectTimer){ clearInterval(autoDetectTimer); autoDetectTimer = null; }
+}
+
+// ==================== 截图分析 ====================
+function captureSnapshot(){
+    if(!curCameraNum){ alert('请先选择相机'); return; }
+    var routeDetail = document.getElementById('routeDetail');
+    routeDetail.innerHTML = '<span class="text-info">⏳ 截图分析中...</span>';
+
+    fetch('/detection/api/hngs-camera-snapshot?cameraNum='+curCameraNum+'&road_id=M001')
+    .then(function(r){return r.json();})
+    .then(function(d){
+        if(d.success && d.snapshot){
+            routeDetail.innerHTML = '<strong>✅ 截图成功</strong><br>车辆: '+d.total_vehicles+
+                ' | 拥堵: '+d.congestion_level+'<br>'+
+                '<img src="/'+d.snapshot.replace(/\\\\/g,'/')+'" style="max-width:200px;border-radius:6px;margin-top:4px;">';
+        } else {
+            routeDetail.innerHTML = '❌ 截图失败: '+(d.error||'未知');
+        }
+    }).catch(function(e){
+        routeDetail.innerHTML = '❌ 错误: '+e.message;
+    });
+}
+
+function closeCamPopup(){
+    stopStream();
+    curCameraNum = ''; curCameraData = null;
+    document.getElementById('camPopup').style.display='none';
+}
+
+function showToast(msg){
+    var el=document.getElementById('routeDetail');
+    var orig=el.innerHTML;
+    el.innerHTML='<span class="text-info">'+msg+'</span>';
+    setTimeout(function(){el.innerHTML=orig;},3000);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,11 @@
+/* 智能交通监测系统 - 样式 */
+body { background: #f0f2f5; font-family: "Microsoft YaHei","PingFang SC",sans-serif; }
+.navbar-brand { letter-spacing: 1px; }
+.card { border-radius: 10px; border: 1px solid rgba(0,0,0,0.06); transition: box-shadow 0.2s; }
+.card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+.live-dot { animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.badge { font-weight: 500; }
+pre code { font-size: 0.85rem; }
+.table th { font-weight: 600; }
+.progress { border-radius: 10px; }
