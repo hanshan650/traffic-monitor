@@ -125,14 +125,4 @@ RETURN [n IN nodes(path) | n.name] AS route
 ORDER BY reduce(c=0, r IN relationships(path) | c+r.length) ASC
 ```
 
-## 🎓 答辩要点
-
-1. **数据库选型有理有据**：每个 NoSQL 都有明确的应用场景
-2. **Redis 8种应用**：缓存/队列/排行/锁/限流/计数/Session/PubSub
-3. **Neo4j 天然场景**：路网就是图，不是硬凑
-4. **MongoDB 文档优势**：检测结果的灵活字段 + 嵌套检测框
-5. **YOLOv8 真实 AI**：非玩具级 Demo，可实际运行
-
----
-
 > 非关系型数据库综合实践项目 © 2026
