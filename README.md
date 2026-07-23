@@ -353,6 +353,7 @@ accidents: {
 ## 📄 License
 
 MIT License — 仅供学习与展示使用。
+后续会继续优化与更新
 
 ---
 
